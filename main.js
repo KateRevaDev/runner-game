@@ -1,193 +1,176 @@
-import * as THREE from 'three';
+import * as THREE from "https://cdn.skypack.dev/three@0.132.2";
+import { OrbitControls } from "https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(100, window.innerWidth / window.innerHeight, 0.1, 1000);
-
-const loader = new GLTFLoader();
-
-let human = null;
-let track = null;
-let fileAnimations = null;
-let mixer;
+// Global variables
+let scene,
+    camera,
+    renderer,
+    controls,
+    moveMouse,
+    raycaster,
+    draggableObject,
+    human,
+    loader,
+    mixer;
 const clock = new THREE.Clock();
 
-// loading human
-loader.load('./models/Stickman.glb', function (gltf) {
+// Create Scene and lights
+function init() {
+    // SCENE
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xbfd1e5);
 
-    console.log('gltf ', gltf);
+    // CAMERA
+    camera = new THREE.PerspectiveCamera(
+        50,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        5000
+    );
+    camera.position.set(0, 80, 200);
 
-    fileAnimations = gltf.animations;
+    // RENDERER
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
 
-    const sword = gltf.scene;  // sword 3D object is loaded
-    sword.position.y = -2;
+    // CAMERA MOVEMENT CONTROLS
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 65, 0);
+    // controls.enableDamping = true;
+    controls.update();
 
-    human = scene.add(sword);
+    // LIGHTS
+    let ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    let directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(-30, 50, 150);
+    scene.add(ambientLight);
+    scene.add(directionalLight);
 
-    human.userData.draggable = true;
-    human.userData.name = 'human';
+    // RAYCASTING (mouse functionality)
+    raycaster = new THREE.Raycaster();
+    moveMouse = new THREE.Vector2();
 
-    //
-    mixer = new THREE.AnimationMixer(human);
+    // LOADER
+    loader = new GLTFLoader();
 
-    const runAnim = THREE.AnimationClip.findByName(fileAnimations, 'Run');
-    const idle = mixer.clipAction(runAnim);
-    idle.play();
+    // FLOOR
+    let floor;
+    // let floor = new THREE.Mesh(
+    //     new THREE.BoxBufferGeometry(2000, 3, 2000),
+    //     new THREE.MeshPhongMaterial({ color: 0x1b8f06 })
+    // );
+    // floor.isDraggable = false;
+    // scene.add(floor);
+    loader.load('./models/TrackFloor.glb', function (gltf) {
 
-    //
-}, null, function (error) {
+        gltf.scene.scale.x = 40;
+        gltf.scene.scale.y = 20;
+        gltf.scene.scale.z = 100;
+        gltf.scene.userData.isDraggable = false;
 
-    console.error(error);
+        floor = scene.add(gltf.scene);
 
+    }, null, function (error) {
+
+        console.error(error);
+
+    });
+}
+
+function addHuman() {
+    // loading human
+    loader.load('./models/Stickman.glb', function (gltf) {
+
+        gltf.scene.scale.x = 20;
+        gltf.scene.scale.y = 20;
+        gltf.scene.scale.z = 10;
+        gltf.scene.rotation.y = Math.PI;
+        gltf.scene.isDraggable = true;
+
+        console.log('gltf.scene ', gltf.scene);
+
+        draggableObject = gltf.scene;
+
+        human = scene.add(gltf.scene);
+
+        mixer = new THREE.AnimationMixer(human);
+
+        const runAnim = THREE.AnimationClip.findByName(gltf.animations, 'Run');
+        mixer.clipAction(runAnim).play();
+
+        //
+    }, null, function (error) {
+
+        console.error(error);
+
+    });
+}
+/**
+ * Checks if the user is 'holding' an object.
+ * If true, function updates object's location based on mouse postion
+ * If false, function does nothing
+ */
+function dragObject() {
+    // If 'holding' an object, move the object
+    if (draggableObject) {
+        raycaster.setFromCamera(moveMouse, camera);
+        // `found` is the metadata of the objects, not the objetcs themsevles
+        const found = raycaster.intersectObjects(scene.children, true);
+        if (found.length) {
+            for (let obj3d of found) {
+                if (!obj3d.object.isDraggable) {
+                    draggableObject.position.x = obj3d.point.x;
+                    // draggableObject.position.z = obj3d.point.z;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// Constantly updates the mouse location for use in `dragObject()`
+window.addEventListener("mousemove", (event) => {
+    raycaster.setFromCamera(moveMouse, camera);
+    const found = raycaster.intersectObjects(scene.children, true);
+    if (found.length && found[0].object.isDraggable) {
+        draggableObject = found[0].object;
+    }
+    dragObject(); // Updates the object's postion every time the mouse moves
+    moveMouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    moveMouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 });
 
-// loading track
-loader.load('./models/TrackFloor.glb', function (gltf) {
-
-    console.log('gltf ', gltf);
-    
-    gltf.scene.position.y = -2;
-    gltf.scene.position.x = 1;
-    gltf.scene.userData.draggable = false;
-
-    track = scene.add(gltf.scene);
-
-}, null, function (error) {
-
-    console.error(error);
-
-});
-
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-
-
-const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(1, 1, 1);
-scene.add(light);
-
-camera.position.z = 5;
-
-
-
+// Recursive function to render the scene
 function animate() {
-    requestAnimationFrame(animate);
-
+    controls.update();
     if (mixer) {
         mixer.update(clock.getDelta());
     }
-
     renderer.render(scene, camera);
+    requestAnimationFrame(animate);
 }
 
-function moveHuman(mouse) {
-
-    let degrees = getMouseDegrees(mouse.x, mouse.y, 5);
-
-    human.position.x = degrees.x;
-
-    // console.log('human ', human);
-    // console.log('track ', track.position);
-
+// Re-renders the scene upon window resize
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-function getMouseDegrees(x, y, degreeLimit) {
-    let dx = 0,
-        dy = 0,
-        xdiff,
-        xPercentage,
-        ydiff,
-        yPercentage;
-
-    let w = { x: window.innerWidth, y: window.innerHeight };
-
-    // Left (Rotates neck left between 0 and -degreeLimit)
-
-    // 1. If cursor is in the left half of screen
-    if (x <= w.x / 2) {
-        // 2. Get the difference between middle of screen and cursor position
-        xdiff = w.x / 2 - x;
-        // 3. Find the percentage of that difference (percentage toward edge of screen)
-        xPercentage = (xdiff / (w.x / 2)) * 100;
-        // 4. Convert that to a percentage of the maximum rotation we allow for the neck
-        dx = ((degreeLimit * xPercentage) / 100) * -1;
-    }
-    // Right (Rotates neck right between 0 and degreeLimit)
-    if (x >= w.x / 2) {
-        xdiff = x - w.x / 2;
-        xPercentage = (xdiff / (w.x / 2)) * 100;
-        dx = (degreeLimit * xPercentage) / 100;
-    }
-    // Up (Rotates neck up between 0 and -degreeLimit)
-    if (y <= w.y / 2) {
-        ydiff = w.y / 2 - y;
-        yPercentage = (ydiff / (w.y / 2)) * 100;
-        // Note that I cut degreeLimit in half when she looks up
-        dy = (((degreeLimit * 0.5) * yPercentage) / 100) * -1;
-    }
-
-    // Down (Rotates neck down between 0 and degreeLimit)
-    if (y >= w.y / 2) {
-        ydiff = y - w.y / 2;
-        yPercentage = (ydiff / (w.y / 2)) * 100;
-        dy = (degreeLimit * yPercentage) / 100;
-    }
-    return { x: dx, y: dy };
-}
-
-// document.addEventListener('mousemove', function (e) {
-//     moveHuman(getMousePos(e));
-// });
-
-function getMousePos(e) {
-    return { x: e.clientX, y: e.clientY };
-}
-
-const raycaster = new THREE.Raycaster();
-const moveMouse = new THREE.Vector2();
-// const draggable = THREE.Object3D;
-
-document.addEventListener('mousemove', function (e) {
-
-    moveMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    moveMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-
-    raycaster.setFromCamera(moveMouse, camera);
-    const raycasters = raycaster.intersectObjects(scene.children);
-
-    for (const obj of raycasters) {
-        console.log('obj ', obj);
-        if (obj.name !== 'Plane_flat') {
-            human.position.x = obj.point.x;
-            console.log('human.position.x ', human.position.x);
-        }
-       
-        // human.position.z = obj.point.z;
-    }
-    
-    // console.log('moveMouse ', moveMouse);
-    
-});
-
-function dragObject () {
-    // console.log('draggable ', draggable);
-    // if (draggable) {
-        raycaster.setFromCamera(moveMouse, camera);
-        const found = raycaster.intersectObjects(scene.children);
-        console.log('found ', found);
-        if (found.length) {
-            for (const o of found) {
-                if (!o.object.userData.track) {
-                    continue
-                }
-                draggable.position.x = o.point.x;
-                draggable.position.z = o.point.z;
-                
-            }
-            
-        }
-    // }
-}
-
-animate();
+// Start the program
+(function () {
+    window.addEventListener("resize", onWindowResize, false);
+    init();
+    // Adding multiple objects
+    // addObject(8, { x: 0, y: 6, z: 0 }, "#FF0000");
+    addHuman();
+    //   addObject(8, { x: 15, y: 6, z: 15 }, "#313DF8");
+    //   addObject(8, { x: -15, y: 6, z: -15 }, "#000000");
+    //   addObject(8, { x: -15, y: 6, z: 15 }, "#EF0A61");
+    //   addObject(8, { x: 15, y: 6, z: -15 }, "#CAB21D");
+    animate();
+})();
